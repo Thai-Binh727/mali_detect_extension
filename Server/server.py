@@ -1,10 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from Models.load_models import load_model, predict_all_model
-from database import db, collection
-from bson import ObjectId
-from Extract_features.ExtractFeatures import getDomain
+
 from Environment.path import *
+from Models.load_models import load_model, predict_all_model
+from Server.Check_safe_site import Check_site, Check_tld
+from Server.database import checkAvailable
 
 app = Flask(__name__)
 CORS(app)
@@ -13,31 +13,37 @@ CORS(app)
 def check_url():
     data = request.get_json()
     url = data.get("url", "")
-    domain = getDomain(url)
 
-    document = collection.find_one({"domain": domain})
-
-    if document:
-        document["_id"] = str(document["_id"])
-
-        # URL found in the database
-        is_malicious = document["label"] == 1
+    if Check_site(url):
         return jsonify({
             "url": url,
-            "isMalicious": is_malicious,
-            "details": document
+            "isMalicious": False,
+        })
+
+    if Check_tld(url):
+        return jsonify({
+            "url": url,
+            "isMalicious": False,
+        })
+
+    document = checkAvailable(url)
+    if document:
+        print('found')
+        return jsonify({
+            "url": url,
+            "isMalicious": True,
         })
     else:
         is_malicious = predict_all_model(models, url)
-
+        print(is_malicious)
         return jsonify({
             "url": url,
             "isMalicious": is_malicious,
-            "message": "URL not found in the database"
         })
+
 
 if __name__ == "__main__":
     model_path = [AdaBoost, DecisionTree, KNN, LDA, RandomForest]
     models = [load_model(path) for path in model_path]
 
-    app.run(host = '0.0.0.0' , port = 5000)
+    app.run(host='0.0.0.0', port=5000)
